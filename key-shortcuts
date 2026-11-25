@@ -14,20 +14,20 @@ AUTOSTART = os.path.expanduser("~/.config/autostart/fingertip-control.desktop")
 KB_ROOT = "org.cinnamon.desktop.keybindings"
 KB_PATH = "/org/cinnamon/desktop/keybindings/custom-keybindings/"
 PREFIX = "keyshortcut"
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 NONE = "None (leave as is)"
 CUSTOM = "Custom key combo"
 ACTIONS = {
     NONE: None,
-    "Play / Pause": "playerctl play-pause",
-    "Next track": "playerctl next",
-    "Previous track": "playerctl previous",
-    "Stop": "playerctl stop",
-    "Mute / unmute speakers": "pactl set-sink-mute @DEFAULT_SINK@ toggle",
-    "Volume up": "pactl set-sink-volume @DEFAULT_SINK@ +5%",
-    "Volume down": "pactl set-sink-volume @DEFAULT_SINK@ -5%",
-    "Mute / unmute mic": "pactl set-source-mute @DEFAULT_SOURCE@ toggle",
+    "Play / Pause": "xdotool key XF86AudioPlay",
+    "Next track": "xdotool key XF86AudioNext",
+    "Previous track": "xdotool key XF86AudioPrev",
+    "Stop": "xdotool key XF86AudioStop",
+    "Mute / unmute speakers": "xdotool key XF86AudioMute",
+    "Volume up": "xdotool key XF86AudioRaiseVolume",
+    "Volume down": "xdotool key XF86AudioLowerVolume",
+    "Mute / unmute mic": "xdotool key XF86AudioMicMute",
     "Mic volume up": "pactl set-source-volume @DEFAULT_SOURCE@ +5%",
     "Mic volume down": "pactl set-source-volume @DEFAULT_SOURCE@ -5%",
     "Copy": "xdotool key ctrl+c",
