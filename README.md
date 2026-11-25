@@ -9,7 +9,8 @@ A small app for Linux Mint (Cinnamon) and Windows that remaps F-keys and mouse b
 - Mouse buttons (middle, back, forward) can be remapped the same way, or disabled
 - Closing the window hides it to the system tray and the remaps keep running. Click the tray icon to reopen it, right-click for Quit. Launching the app again just brings the window back
 - **Update** button: on Windows it downloads the newest release and restarts itself; on Linux it pulls the latest version from GitHub (git clone installs)
-- Actions: play/pause, next, previous, stop, mute speakers, volume up/down, mute mic, mic volume up/down, copy, paste, undo, browser back/forward, middle click, double click, disable button
+- Actions: play/pause, next, previous, stop, mute speakers, volume up/down, mute mic, mic volume up/down, copy, paste, undo, browser back/forward, middle click, double click, clipboard history (Win+V on Windows, GPaste on Linux), disable button
+- **Custom key combo:** pick it from the dropdown and type any combo in the box, like `ctrl+shift+t` or `alt+left`. Modifiers: ctrl, alt, shift, win. Keys: a-z, 0-9, f1-f12, enter, esc, tab, space, delete, backspace, home, end, pageup, pagedown, arrows. Bad combos are rejected when you press Apply
 - Shortcuts are written as Cinnamon custom keybindings; other custom shortcuts are left alone
 
 ## Requirements

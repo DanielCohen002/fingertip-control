@@ -24,7 +24,7 @@ user32.CallNextHookEx.restype = LRESULT
 kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 
 APP = "FingertipControl"
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 REPO = "DanielCohen002/fingertip-control"
 CONFIG = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP, "config.json")
 WM_HOTKEY, WM_APP, WM_QUIT = 0x0312, 0x8000, 0x0012
@@ -41,11 +41,43 @@ VK = {
     "Mute / unmute speakers": 0xAD, "Volume down": 0xAE, "Volume up": 0xAF,
     "Browser back": 0xA6, "Browser forward": 0xA7,
 }
-COMBO = {"Copy": (0x11, 0x43), "Paste": (0x11, 0x56), "Undo": (0x11, 0x5A)}  # Ctrl + key
+COMBO = {"Copy": (0x11, 0x43), "Paste": (0x11, 0x56), "Undo": (0x11, 0x5A),
+         "Clipboard history": (0x5B, 0x56)}  # Ctrl+C / Ctrl+V / Ctrl+Z / Win+V
 MIC = ["Mute / unmute mic", "Mic volume up", "Mic volume down"]
 CLICKS = ["Middle click", "Double click"]
 DISABLE = "Disable this button"
-ACTIONS = [NONE] + list(VK) + MIC + list(COMBO) + CLICKS + [DISABLE]
+CUSTOM = "Custom key combo"
+ACTIONS = [NONE] + list(VK) + MIC + list(COMBO) + CLICKS + [CUSTOM, DISABLE]
+MODS = {"ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10, "win": 0x5B, "windows": 0x5B, "super": 0x5B}
+NAMED = {"enter": 0x0D, "return": 0x0D, "esc": 0x1B, "escape": 0x1B, "tab": 0x09, "space": 0x20, "delete": 0x2E,
+         "del": 0x2E, "backspace": 0x08, "home": 0x24, "end": 0x23, "pageup": 0x21, "pagedown": 0x22, "insert": 0x2D,
+         "left": 0x25, "up": 0x26, "right": 0x27, "down": 0x28}
+HELP = ("Custom key combo: type keys joined with +, like ctrl+shift+t or alt+left.\n"
+        "Modifiers: ctrl, alt, shift, win.  Keys: a-z, 0-9, f1-f12, enter, esc, tab, space, delete,\n"
+        "backspace, home, end, pageup, pagedown, left, right, up, down.")
+
+
+def parse_combo(text):
+    """'ctrl+shift+t' -> list of virtual key codes (modifiers first). Raises ValueError if unclear."""
+    parts = [p for p in text.lower().replace(" ", "").split("+") if p]
+    if not parts:
+        raise ValueError("type a combo like ctrl+shift+t")
+    codes = []
+    for p in parts:
+        if p in MODS:
+            codes.append(MODS[p])
+        elif p in NAMED:
+            codes.append(NAMED[p])
+        elif len(p) in (2, 3) and p[0] == "f" and p[1:].isdigit() and 1 <= int(p[1:]) <= 12:
+            codes.append(0x6F + int(p[1:]))
+        elif len(p) == 1 and p.isalnum() and p.isascii():
+            codes.append(ord(p.upper()))
+        else:
+            raise ValueError(f"unknown key '{p}'")
+    if all(c in MODS.values() for c in codes):
+        raise ValueError("add a normal key, like ctrl+c")
+    return sorted(codes, key=lambda c: c not in MODS.values())
+
 KEYS = {f"F{i}": 0x6F + i for i in range(1, 13)}
 MOUSE = {"Middle button": "middle", "Back button": 1, "Forward button": 2}  # X1 = back, X2 = forward
 DEFAULTS = {
@@ -110,6 +142,8 @@ def do_action(action):
         press(VK[action])
     elif action in COMBO:
         press(*COMBO[action])
+    elif action.startswith("Custom:"):
+        press(*parse_combo(action[7:]))
     elif action == "Middle click":
         click(0x20, 0x40)
     elif action == "Double click":
@@ -273,6 +307,37 @@ def single_instance():
     return False
 
 
+class ActionPicker(ttk.Frame):
+    """Action dropdown plus a text box that is used when 'Custom key combo' is chosen."""
+
+    def __init__(self, parent, value):
+        super().__init__(parent)
+        self.combo = ttk.Combobox(self, values=ACTIONS, state="readonly", width=22)
+        self.entry = ttk.Entry(self, width=18)
+        self.combo.pack(side="left")
+        self.entry.pack(side="left", padx=(6, 0))
+        self.combo.bind("<<ComboboxSelected>>", lambda e: self._sync())
+        self.set(value)
+
+    def _sync(self):
+        self.entry.configure(state="normal" if self.combo.get() == CUSTOM else "disabled")
+
+    def get(self):
+        if self.combo.get() == CUSTOM:
+            return "Custom: " + self.entry.get().strip()
+        return self.combo.get()
+
+    def set(self, value):
+        self.entry.configure(state="normal")
+        self.entry.delete(0, "end")
+        if value.startswith("Custom:"):
+            self.combo.set(CUSTOM)
+            self.entry.insert(0, value[7:].strip())
+        else:
+            self.combo.set(value if value in ACTIONS else NONE)
+        self._sync()
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -299,8 +364,7 @@ class App(tk.Tk):
         for i, row in enumerate(cfg["keys"]):
             key = ttk.Combobox(frm, values=list(KEYS), state="readonly", width=16)
             key.set(row["key"] if row["key"] in KEYS else "F5")
-            act = ttk.Combobox(frm, values=ACTIONS, state="readonly", width=26)
-            act.set(row["action"] if row["action"] in ACTIONS else NONE)
+            act = ActionPicker(frm, row["action"])
             key.grid(row=i + 1, column=0, pady=4, sticky="w")
             act.grid(row=i + 1, column=1, pady=4, padx=12)
             self.key_rows.append((key, act))
@@ -308,21 +372,21 @@ class App(tk.Tk):
         self.mouse_rows = {}
         for i, name in enumerate(MOUSE):
             ttk.Label(frm, text=name).grid(row=7 + i, column=0, sticky="w")
-            act = ttk.Combobox(frm, values=ACTIONS, state="readonly", width=26)
-            act.set(cfg["mouse"][name] if cfg["mouse"][name] in ACTIONS else NONE)
+            act = ActionPicker(frm, cfg["mouse"][name])
             act.grid(row=7 + i, column=1, pady=4, padx=12)
             self.mouse_rows[name] = act
+        ttk.Label(frm, text=HELP, foreground="#555", justify="left").grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
         self.auto = tk.BooleanVar(value=autostart_enabled())
         ttk.Checkbutton(frm, text="Start with Windows", variable=self.auto,
-                        command=lambda: set_autostart(self.auto.get())).grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
+                        command=lambda: set_autostart(self.auto.get())).grid(row=11, column=0, columnspan=2, sticky="w", pady=(8, 0))
         bar = ttk.Frame(frm)
-        bar.grid(row=11, column=0, columnspan=2, pady=(10, 0), sticky="w")
+        bar.grid(row=12, column=0, columnspan=2, pady=(10, 0), sticky="w")
         ttk.Button(bar, text="Apply", command=self.apply).pack(side="left")
         ttk.Button(bar, text="Reset to defaults", command=self.reset).pack(side="left", padx=8)
         ttk.Button(bar, text="Update", command=self.update).pack(side="left", padx=(0, 8))
         ttk.Button(bar, text="Quit", command=self.quit_app).pack(side="left")
         self.status = tk.StringVar()
-        ttk.Label(frm, textvariable=self.status).grid(row=12, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Label(frm, textvariable=self.status).grid(row=13, column=0, columnspan=2, sticky="w", pady=(6, 0))
         self.protocol("WM_DELETE_WINDOW", self.withdraw)  # hide to the tray; remaps keep working
         self.tray_events = queue.Queue()
         self.start_tray(base)
@@ -369,6 +433,13 @@ class App(tk.Tk):
 
     def apply(self):
         cfg = self.current()
+        for what, action in [(r["key"], r["action"]) for r in cfg["keys"]] + list(cfg["mouse"].items()):
+            if action.startswith("Custom:"):
+                try:
+                    parse_combo(action[7:])
+                except ValueError as e:
+                    self.status.set(f"{what}: {e}")
+                    return
         keys = [r["key"] for r in cfg["keys"] if r["action"] != NONE]
         if len(keys) != len(set(keys)):
             self.status.set("Each key can only be used once.")
