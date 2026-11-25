@@ -23,7 +23,7 @@ user32.CallNextHookEx.restype = LRESULT
 kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 
 APP = "FingertipControl"
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 REPO = "DanielCohen002/fingertip-control"
 CONFIG = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP, "config.json")
 WM_HOTKEY, WM_APP, WM_QUIT = 0x0312, 0x8000, 0x0012
