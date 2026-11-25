@@ -24,4 +24,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/FingertipControl.exe --title "Fingertip Control ${{ github.ref_name }}" --notes "Windows download: FingertipControl.exe. No install or Python needed. Windows may show a SmartScreen warning because the app is unsigned (More info, then Run anyway)."
+        run: |
+          gh release create "${{ github.ref_name }}" dist/FingertipControl.exe \
+            --title "Fingertip Control ${{ github.ref_name }}" \
+            --notes "Download FingertipControl.exe below. No install or Python needed. Windows may show a SmartScreen warning because the app is unsigned (click More info, then Run anyway)."

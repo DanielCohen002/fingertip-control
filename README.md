@@ -20,7 +20,7 @@ A small app for Linux Mint (Cinnamon) and Windows that remaps F-keys and mouse b
 sudo apt install playerctl xbindkeys xdotool
 ```
 
-Keyboard shortcuts are saved in Cinnamon and keep working with the app closed. Tick **Start mouse remapping at login** to bring the mouse remaps back after a restart.
+Keyboard shortcuts are saved in Cinnamon and keep working with the app closed. Tick **Start at login** to restore your keyboard and mouse remaps automatically after each login.
 
 ## Run
 
@@ -37,7 +37,7 @@ Settings are saved to `~/.config/key-shortcuts/config.json`.
 - To run from source instead: Python 3 with `pip install pycaw comtypes`, then `python windows/fingertip_control_win.py`
 - Closing the window minimizes it so the hotkeys keep working; use **Quit** to exit
 - Mouse buttons are remapped with a low-level mouse hook; the original button press is blocked
-- **Start with Windows** checkbox launches it minimized at login
+- **Start with Windows** checkbox launches the whole app minimized at login (keyboard and mouse remaps)
 - **Download:** get `FingertipControl.exe` from the [latest release](https://github.com/DanielCohen002/fingertip-control/releases/latest). It's a single file with everything built in, so there's nothing to install. Windows may show a SmartScreen warning because the app is unsigned (More info, then Run anyway)
 - The exe is built by the **Build Windows exe** GitHub Action
 - Untested on real Windows so far

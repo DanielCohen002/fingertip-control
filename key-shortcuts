@@ -13,7 +13,7 @@ AUTOSTART = os.path.expanduser("~/.config/autostart/fingertip-control.desktop")
 KB_ROOT = "org.cinnamon.desktop.keybindings"
 KB_PATH = "/org/cinnamon/desktop/keybindings/custom-keybindings/"
 PREFIX = "keyshortcut"
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 NONE = "None (leave as is)"
 ACTIONS = {
@@ -195,7 +195,7 @@ def run_gui():
                 grid.attach(box, 1, 7 + i, 1, 1)
                 self.mouse_rows[name] = box
 
-            self.auto = Gtk.CheckButton(label="Start mouse remapping at login")
+            self.auto = Gtk.CheckButton(label="Start at login")
             self.auto.set_active(cfg["autostart"])
             grid.attach(self.auto, 0, 10, 2, 1)
 
@@ -253,7 +253,9 @@ def run_gui():
 
 
 if __name__ == "__main__":
-    if "--apply" in sys.argv:  # used at login: start mouse remapping without opening the window
-        apply_mouse(load()["mouse"])
+    if "--apply" in sys.argv:  # used at login: restore everything without opening the window
+        cfg = load()
+        apply_keys(cfg["keys"])
+        apply_mouse(cfg["mouse"])
     else:
         run_gui()
