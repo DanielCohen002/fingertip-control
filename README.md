@@ -7,6 +7,7 @@ A small app for Linux Mint (Cinnamon) and Windows that remaps F-keys and mouse b
 - Defaults: F5 Play/Pause, F6 Mute mic, F7 Volume down, F8 Volume up
 - Each of the four keys can be changed to any of F1-F12 and any action from a dropdown
 - Mouse buttons (middle, back, forward) can be remapped the same way, or disabled
+- **Update** button: on Windows it downloads the newest release and restarts itself; on Linux it pulls the latest version from GitHub (git clone installs)
 - Actions: play/pause, next, previous, stop, mute speakers, volume up/down, mute mic, mic volume up/down, copy, paste, undo, browser back/forward, middle click, double click, disable button
 - Shortcuts are written as Cinnamon custom keybindings; other custom shortcuts are left alone
 

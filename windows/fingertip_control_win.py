@@ -2,8 +2,10 @@
 import ctypes
 import json
 import os
+import subprocess
 import sys
 import threading
+import urllib.request
 import tkinter as tk
 from ctypes import wintypes
 from tkinter import ttk
@@ -21,6 +23,8 @@ user32.CallNextHookEx.restype = LRESULT
 kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 
 APP = "FingertipControl"
+VERSION = "1.1.0"
+REPO = "DanielCohen002/fingertip-control"
 CONFIG = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP, "config.json")
 WM_HOTKEY, WM_APP, WM_QUIT = 0x0312, 0x8000, 0x0012
 WM_RUN = WM_APP + 1  # run an action requested by the mouse hook
@@ -197,6 +201,36 @@ class InputThread(threading.Thread):
         user32.PostThreadMessageW(self.tid, WM_APP, 0, 0)
 
 
+def _version(tag):
+    return tuple(int(x) for x in tag.lstrip("v").split(".") if x.isdigit())
+
+
+def check_update():
+    """Return (tag, download_url) if a newer release exists, else None."""
+    req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/releases/latest",
+                                 headers={"User-Agent": "FingertipControl"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        data = json.load(r)
+    if _version(data["tag_name"]) <= _version(VERSION):
+        return None
+    for a in data.get("assets", []):
+        if a["name"] == "FingertipControl.exe":
+            return data["tag_name"], a["browser_download_url"]
+    return None
+
+
+def install_update(url):
+    """Download the new exe, swap it in (a running exe can be renamed but not overwritten) and relaunch."""
+    exe = sys.executable
+    new, old = exe + ".new", exe + ".old"
+    urllib.request.urlretrieve(url, new)
+    if os.path.exists(old):
+        os.remove(old)
+    os.replace(exe, old)
+    os.replace(new, exe)
+    subprocess.Popen([exe], env={**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"})
+
+
 def set_autostart(on):
     import winreg
     exe = f'"{sys.executable}"' if getattr(sys, "frozen", False) else f'"{sys.executable}" "{os.path.abspath(__file__)}"'
@@ -223,6 +257,11 @@ def autostart_enabled():
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
+        if getattr(sys, "frozen", False):  # clean up after a previous update
+            try:
+                os.remove(sys.executable + ".old")
+            except OSError:
+                pass
         self.title("Fingertip Control")
         self.resizable(False, False)
         base = getattr(sys, "_MEIPASS", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -261,6 +300,7 @@ class App(tk.Tk):
         bar.grid(row=11, column=0, columnspan=2, pady=(10, 0), sticky="w")
         ttk.Button(bar, text="Apply", command=self.apply).pack(side="left")
         ttk.Button(bar, text="Reset to defaults", command=self.reset).pack(side="left", padx=8)
+        ttk.Button(bar, text="Update", command=self.update).pack(side="left", padx=(0, 8))
         ttk.Button(bar, text="Quit", command=self.quit_app).pack(side="left")
         self.status = tk.StringVar()
         ttk.Label(frm, textvariable=self.status).grid(row=12, column=0, columnspan=2, sticky="w", pady=(6, 0))
@@ -285,6 +325,27 @@ class App(tk.Tk):
         save(cfg)
         self.hk.set_cfg(cfg)
         self.after(300, lambda: self.status.set(self.hk.result))
+
+    def update(self):
+        self.status.set(f"Checking for updates (v{VERSION})...")
+
+        def work():
+            try:
+                found = check_update()
+                if not found:
+                    msg = f"You're up to date (v{VERSION})."
+                elif not getattr(sys, "frozen", False):
+                    msg = f"{found[0]} is available. Download it from the GitHub releases page."
+                else:
+                    self.after(0, lambda: self.status.set(f"Downloading {found[0]}..."))
+                    install_update(found[1])
+                    self.after(0, self.quit_app)
+                    return
+            except Exception as e:  # noqa: BLE001
+                msg = f"Update failed: {e}"
+            self.after(0, lambda: self.status.set(msg))
+
+        threading.Thread(target=work, daemon=True).start()
 
     def reset(self):
         for (k, a), d in zip(self.key_rows, DEFAULTS["keys"]):

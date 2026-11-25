@@ -13,6 +13,7 @@ AUTOSTART = os.path.expanduser("~/.config/autostart/fingertip-control.desktop")
 KB_ROOT = "org.cinnamon.desktop.keybindings"
 KB_PATH = "/org/cinnamon/desktop/keybindings/custom-keybindings/"
 PREFIX = "keyshortcut"
+VERSION = "1.1.0"
 
 NONE = "None (leave as is)"
 ACTIONS = {
@@ -133,6 +134,17 @@ def apply_all(cfg):
     save(cfg)
 
 
+def update():
+    """Update by pulling the latest version from GitHub (works when installed from a git clone)."""
+    here = os.path.dirname(os.path.realpath(__file__))
+    if not os.path.isdir(os.path.join(here, ".git")):
+        return False, "Not a git clone. Get the latest from github.com/DanielCohen002/fingertip-control."
+    r = subprocess.run(["git", "-C", here, "pull", "--ff-only"], capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        return False, "Update failed: " + (r.stderr.strip().splitlines() or ["unknown error"])[-1]
+    return "Already up to date" not in r.stdout, "Already up to date." if "Already up to date" in r.stdout else "Updated. Restarting..."
+
+
 def run_gui():
     import gi
     gi.require_version("Gtk", "3.0")
@@ -188,7 +200,7 @@ def run_gui():
             grid.attach(self.auto, 0, 10, 2, 1)
 
             bar = Gtk.Box(spacing=8)
-            for label, handler in (("Apply", self.on_apply), ("Reset to defaults", self.on_reset)):
+            for label, handler in (("Apply", self.on_apply), ("Reset to defaults", self.on_reset), ("Update", self.on_update)):
                 b = Gtk.Button(label=label)
                 b.connect("clicked", handler)
                 bar.pack_start(b, False, False, 0)
@@ -214,6 +226,16 @@ def run_gui():
                 self.status.set_text("Applied.")
             except Exception as e:  # noqa: BLE001
                 self.status.set_text(f"Failed: {e}")
+
+        def on_update(self, _):
+            try:
+                changed, msg = update()
+            except Exception as e:  # noqa: BLE001
+                changed, msg = False, f"Update failed: {e}"
+            self.status.set_text(f"{msg} (v{VERSION})" if not changed else msg)
+            if changed:
+                self.hide()
+                os.execv(sys.executable, [sys.executable, os.path.realpath(__file__)])
 
         def on_reset(self, _):
             names = list(ACTIONS)
