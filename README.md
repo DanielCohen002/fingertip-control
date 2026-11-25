@@ -33,10 +33,10 @@ Settings are saved to `~/.config/key-shortcuts/config.json`.
 
 `windows/fingertip_control_win.py` is the Windows port: same four keys and the same action dropdowns, using global hotkeys instead of Cinnamon keybindings.
 
-- Needs Python 3 with `pip install pycaw comtypes` (pycaw is only used for the mic actions)
-- Run: `python windows/fingertip_control_win.py`
+- To run from source instead: Python 3 with `pip install pycaw comtypes`, then `python windows/fingertip_control_win.py`
 - Closing the window minimizes it so the hotkeys keep working; use **Quit** to exit
 - Mouse buttons are remapped with a low-level mouse hook; the original button press is blocked
 - **Start with Windows** checkbox launches it minimized at login
-- `FingertipControl.exe` is built by the **Build Windows exe** GitHub Action (Actions tab, download the artifact)
+- **Download:** get `FingertipControl.exe` from the [latest release](https://github.com/DanielCohen002/fingertip-control/releases/latest). It's a single file with everything built in, so there's nothing to install. Windows may show a SmartScreen warning because the app is unsigned (More info, then Run anyway)
+- The exe is built by the **Build Windows exe** GitHub Action
 - Untested on real Windows so far

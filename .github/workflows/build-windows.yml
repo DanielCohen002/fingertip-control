@@ -2,7 +2,10 @@ name: Build Windows exe
 on:
   workflow_dispatch:
   push:
+    tags: ["v*"]
     paths: ["windows/**", ".github/workflows/build-windows.yml"]
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -17,3 +20,8 @@ jobs:
         with:
           name: FingertipControl-windows
           path: dist/FingertipControl.exe
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/FingertipControl.exe --title "Fingertip Control ${{ github.ref_name }}" --notes "Windows download: FingertipControl.exe. No install or Python needed. Windows may show a SmartScreen warning because the app is unsigned (More info, then Run anyway)."
