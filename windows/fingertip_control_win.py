@@ -2,6 +2,7 @@
 import ctypes
 import json
 import os
+import queue
 import subprocess
 import sys
 import threading
@@ -23,7 +24,7 @@ user32.CallNextHookEx.restype = LRESULT
 kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 
 APP = "FingertipControl"
-VERSION = "1.1.2"
+VERSION = "1.2.0"
 REPO = "DanielCohen002/fingertip-control"
 CONFIG = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP, "config.json")
 WM_HOTKEY, WM_APP, WM_QUIT = 0x0312, 0x8000, 0x0012
@@ -228,7 +229,7 @@ def install_update(url):
         os.remove(old)
     os.replace(exe, old)
     os.replace(new, exe)
-    subprocess.Popen([exe], env={**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"})
+    subprocess.Popen([exe, "--after-update"], env={**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"})
 
 
 def set_autostart(on):
@@ -252,6 +253,24 @@ def autostart_enabled():
             return True
     except OSError:
         return False
+
+
+def single_instance():
+    """Return False if another copy is already running (and bring its window forward)."""
+    wait = 5 if "--after-update" in sys.argv else 0  # the old copy is still shutting down
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    for _ in range(wait * 10 + 1):
+        k32.CreateMutexW(None, False, "Local\\FingertipControlSingleInstance")
+        if ctypes.get_last_error() != 183:  # ERROR_ALREADY_EXISTS
+            return True
+        if wait:
+            import time
+            time.sleep(0.1)
+    hwnd = user32.FindWindowW(None, "Fingertip Control")
+    if hwnd:
+        user32.ShowWindow(hwnd, 5)
+        user32.SetForegroundWindow(hwnd)
+    return False
 
 
 class App(tk.Tk):
@@ -304,10 +323,42 @@ class App(tk.Tk):
         ttk.Button(bar, text="Quit", command=self.quit_app).pack(side="left")
         self.status = tk.StringVar()
         ttk.Label(frm, textvariable=self.status).grid(row=12, column=0, columnspan=2, sticky="w", pady=(6, 0))
-        self.protocol("WM_DELETE_WINDOW", self.iconify)  # keep running so the remaps keep working
+        self.protocol("WM_DELETE_WINDOW", self.withdraw)  # hide to the tray; remaps keep working
+        self.tray_events = queue.Queue()
+        self.start_tray(base)
+        self.after(150, self.poll_tray)
         self.apply()
         if "--minimized" in sys.argv:
-            self.iconify()
+            self.withdraw()
+
+    def start_tray(self, base):
+        try:
+            import pystray
+            from PIL import Image
+            menu = pystray.Menu(
+                pystray.MenuItem("Show Fingertip Control", lambda: self.tray_events.put("show"), default=True),
+                pystray.MenuItem("Quit", lambda: self.tray_events.put("quit")),
+            )
+            self.tray = pystray.Icon(APP, Image.open(os.path.join(base, "assets", "logo.png")), "Fingertip Control", menu)
+            self.tray.run_detached()
+        except Exception:  # noqa: BLE001  (no tray available: closing just minimizes)
+            self.tray = None
+            self.protocol("WM_DELETE_WINDOW", self.iconify)
+
+    def poll_tray(self):
+        try:
+            while True:
+                event = self.tray_events.get_nowait()
+                if event == "show":
+                    self.deiconify()
+                    self.lift()
+                    self.focus_force()
+                elif event == "quit":
+                    self.quit_app()
+                    return
+        except queue.Empty:
+            pass
+        self.after(150, self.poll_tray)
 
     def current(self):
         return {
@@ -355,10 +406,13 @@ class App(tk.Tk):
             a.set(NONE)
 
     def quit_app(self):
+        if getattr(self, "tray", None):
+            self.tray.stop()
         if self.hk.tid:
             user32.PostThreadMessageW(self.hk.tid, WM_QUIT, 0, 0)
         self.destroy()
 
 
 if __name__ == "__main__":
-    App().mainloop()
+    if single_instance():
+        App().mainloop()

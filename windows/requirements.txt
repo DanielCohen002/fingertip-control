@@ -1,3 +1,5 @@
 pycaw
 comtypes
+pystray
+pillow
 pyinstaller

@@ -7,6 +7,7 @@ A small app for Linux Mint (Cinnamon) and Windows that remaps F-keys and mouse b
 - Defaults: F5 Play/Pause, F6 Mute mic, F7 Volume down, F8 Volume up
 - Each of the four keys can be changed to any of F1-F12 and any action from a dropdown
 - Mouse buttons (middle, back, forward) can be remapped the same way, or disabled
+- Closing the window hides it to the system tray and the remaps keep running. Click the tray icon to reopen it, right-click for Quit. Launching the app again just brings the window back
 - **Update** button: on Windows it downloads the newest release and restarts itself; on Linux it pulls the latest version from GitHub (git clone installs)
 - Actions: play/pause, next, previous, stop, mute speakers, volume up/down, mute mic, mic volume up/down, copy, paste, undo, browser back/forward, middle click, double click, disable button
 - Shortcuts are written as Cinnamon custom keybindings; other custom shortcuts are left alone
@@ -34,7 +35,7 @@ Settings are saved to `~/.config/key-shortcuts/config.json`.
 
 `windows/fingertip_control_win.py` is the Windows port: same four keys and the same action dropdowns, using global hotkeys instead of Cinnamon keybindings.
 
-- To run from source instead: Python 3 with `pip install pycaw comtypes`, then `python windows/fingertip_control_win.py`
+- To run from source instead: Python 3 with `pip install pycaw comtypes pystray pillow`, then `python windows/fingertip_control_win.py`
 - Closing the window minimizes it so the hotkeys keep working; use **Quit** to exit
 - Mouse buttons are remapped with a low-level mouse hook; the original button press is blocked
 - **Start with Windows** checkbox launches the whole app minimized at login (keyboard and mouse remaps)

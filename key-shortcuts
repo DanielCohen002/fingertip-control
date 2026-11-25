@@ -13,7 +13,7 @@ AUTOSTART = os.path.expanduser("~/.config/autostart/fingertip-control.desktop")
 KB_ROOT = "org.cinnamon.desktop.keybindings"
 KB_PATH = "/org/cinnamon/desktop/keybindings/custom-keybindings/"
 PREFIX = "keyshortcut"
-VERSION = "1.1.2"
+VERSION = "1.2.0"
 
 NONE = "None (leave as is)"
 ACTIONS = {
@@ -121,7 +121,7 @@ def set_autostart(on):
         os.makedirs(os.path.dirname(AUTOSTART), exist_ok=True)
         with open(AUTOSTART, "w") as f:
             f.write("[Desktop Entry]\nType=Application\nName=Fingertip Control\n"
-                    f"Exec={os.path.realpath(__file__)} --apply\nIcon=fingertip-control\n"
+                    f"Exec={os.path.realpath(__file__)} --minimized\nIcon=fingertip-control\n"
                     "X-GNOME-Autostart-enabled=true\n")
     elif os.path.exists(AUTOSTART):
         os.remove(AUTOSTART)
@@ -246,10 +246,68 @@ def run_gui():
                 box.set_active(0)
             self.auto.set_active(False)
 
-    win = Window()
-    win.connect("destroy", Gtk.main_quit)
-    win.show_all()
-    Gtk.main()
+    class TrayApp(Gtk.Application):
+        """Single instance. Closing the window hides it; the app keeps running in the tray."""
+
+        def __init__(self):
+            super().__init__(application_id="io.github.danielcohen002.FingertipControl")
+            self.win = None
+            self.first = True
+
+        def do_startup(self):
+            Gtk.Application.do_startup(self)
+            self.hold()  # stay alive with no window open
+            self.win = Window()
+            self.win.connect("delete-event", lambda w, e: w.hide_on_delete())
+            self.make_tray()
+            if "--minimized" in sys.argv:  # started at login: restore remaps quietly
+                try:
+                    cfg = load()
+                    apply_keys(cfg["keys"])
+                    apply_mouse(cfg["mouse"])
+                except Exception:  # noqa: BLE001
+                    pass
+
+        def do_activate(self):
+            if self.first and "--minimized" in sys.argv:
+                self.first = False
+                return
+            self.first = False
+            self.show_window()
+
+        def show_window(self, *_):
+            self.win.show_all()
+            self.win.present()
+
+        def toggle_window(self, *_):
+            if self.win.get_visible():
+                self.win.hide()
+            else:
+                self.show_window()
+
+        def make_tray(self):
+            logo = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets", "logo.png")
+            menu = Gtk.Menu()
+            for label, handler in (("Show Fingertip Control", self.show_window), ("Quit", lambda *_: self.quit())):
+                item = Gtk.MenuItem(label=label)
+                item.connect("activate", handler)
+                menu.append(item)
+            menu.show_all()
+            try:
+                gi.require_version("XApp", "1.0")
+                from gi.repository import XApp
+                self.tray = XApp.StatusIcon()
+                self.tray.set_icon_name(logo)
+                self.tray.set_tooltip_text("Fingertip Control")
+                self.tray.set_secondary_menu(menu)
+                self.tray.connect("activate", self.toggle_window)
+            except (ValueError, ImportError):
+                self.tray = Gtk.StatusIcon.new_from_file(logo)
+                self.tray.set_tooltip_text("Fingertip Control")
+                self.tray.connect("activate", self.toggle_window)
+                self.tray.connect("popup-menu", lambda i, b, t: menu.popup(None, None, Gtk.StatusIcon.position_menu, i, b, t))
+
+    TrayApp().run([sys.argv[0]])
 
 
 if __name__ == "__main__":

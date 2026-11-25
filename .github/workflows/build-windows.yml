@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r windows/requirements.txt
-      - run: pyinstaller --onefile --noconsole --icon assets/icon.ico --add-data "assets/logo.png;assets" --name FingertipControl --collect-submodules comtypes --collect-submodules pycaw windows/fingertip_control_win.py
+      - run: pyinstaller --onefile --noconsole --icon assets/icon.ico --add-data "assets/logo.png;assets" --name FingertipControl --collect-submodules comtypes --collect-submodules pycaw --collect-submodules pystray windows/fingertip_control_win.py
       - uses: actions/upload-artifact@v4
         with:
           name: FingertipControl-windows
