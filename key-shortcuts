@@ -81,6 +81,9 @@ def apply(rows):
 class Window(Gtk.Window):
     def __init__(self):
         super().__init__(title="Fingertip Control")
+        icon = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets", "logo.png")
+        if os.path.exists(icon):
+            self.set_icon_from_file(icon)
         self.set_border_width(14)
         self.set_resizable(False)
         grid = Gtk.Grid(column_spacing=12, row_spacing=10)

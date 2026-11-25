@@ -1,0 +1,19 @@
+name: Build Windows exe
+on:
+  workflow_dispatch:
+  push:
+    paths: ["windows/**", ".github/workflows/build-windows.yml"]
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r windows/requirements.txt
+      - run: pyinstaller --onefile --noconsole --icon assets/icon.ico --add-data "assets/logo.png;assets" --name FingertipControl --collect-submodules comtypes --collect-submodules pycaw windows/fingertip_control_win.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FingertipControl-windows
+          path: dist/FingertipControl.exe
