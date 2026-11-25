@@ -1,4 +1,4 @@
-"""Fingertip Control (Windows): map F-keys to media and volume actions."""
+"""Fingertip Control (Windows): remap F-keys and mouse buttons to simple actions."""
 import ctypes
 import json
 import os
@@ -9,50 +9,85 @@ from ctypes import wintypes
 from tkinter import ttk
 
 user32 = ctypes.windll.user32
+kernel32 = ctypes.windll.kernel32
+LRESULT = ctypes.c_ssize_t
+HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
 user32.RegisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT]
 user32.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, wintypes.HINSTANCE, wintypes.DWORD]
+user32.SetWindowsHookExW.restype = ctypes.c_void_p
+user32.CallNextHookEx.argtypes = [ctypes.c_void_p, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+user32.CallNextHookEx.restype = LRESULT
+kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 
 APP = "FingertipControl"
 CONFIG = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP, "config.json")
 WM_HOTKEY, WM_APP, WM_QUIT = 0x0312, 0x8000, 0x0012
+WM_RUN = WM_APP + 1  # run an action requested by the mouse hook
+WH_MOUSE_LL = 14
+WM_MBUTTONDOWN, WM_MBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP = 0x0207, 0x0208, 0x020B, 0x020C
+LLMHF_INJECTED = 0x01
 KEYUP = 0x0002
 
+NONE = "None (leave as is)"
 # Media keys are sent as virtual key presses. Mic actions use the Core Audio API (pycaw).
 VK = {
     "Play / Pause": 0xB3, "Next track": 0xB0, "Previous track": 0xB1, "Stop": 0xB2,
     "Mute / unmute speakers": 0xAD, "Volume down": 0xAE, "Volume up": 0xAF,
+    "Browser back": 0xA6, "Browser forward": 0xA7,
 }
+COMBO = {"Copy": (0x11, 0x43), "Paste": (0x11, 0x56), "Undo": (0x11, 0x5A)}  # Ctrl + key
 MIC = ["Mute / unmute mic", "Mic volume up", "Mic volume down"]
-ACTIONS = ["None (disabled)"] + list(VK) + MIC
+CLICKS = ["Middle click", "Double click"]
+DISABLE = "Disable this button"
+ACTIONS = [NONE] + list(VK) + MIC + list(COMBO) + CLICKS + [DISABLE]
 KEYS = {f"F{i}": 0x6F + i for i in range(1, 13)}
-DEFAULTS = [
-    {"key": "F5", "action": "Play / Pause"},
-    {"key": "F6", "action": "Mute / unmute mic"},
-    {"key": "F7", "action": "Volume down"},
-    {"key": "F8", "action": "Volume up"},
-]
+MOUSE = {"Middle button": "middle", "Back button": 1, "Forward button": 2}  # X1 = back, X2 = forward
+DEFAULTS = {
+    "keys": [
+        {"key": "F5", "action": "Play / Pause"},
+        {"key": "F6", "action": "Mute / unmute mic"},
+        {"key": "F7", "action": "Volume down"},
+        {"key": "F8", "action": "Volume up"},
+    ],
+    "mouse": {name: NONE for name in MOUSE},
+    "autostart": False,
+}
 
 
 def load():
+    cfg = json.loads(json.dumps(DEFAULTS))
     try:
         with open(CONFIG) as f:
             data = json.load(f)
-        if len(data) == 4:
-            return data
+        if isinstance(data, list) and len(data) == 4:  # config from the first version
+            cfg["keys"] = data
+        elif isinstance(data, dict):
+            if len(data.get("keys", [])) == 4:
+                cfg["keys"] = data["keys"]
+            cfg["mouse"].update({k: v for k, v in data.get("mouse", {}).items() if k in MOUSE})
     except (OSError, ValueError):
         pass
-    return [dict(d) for d in DEFAULTS]
+    return cfg
 
 
-def save(rows):
+def save(cfg):
     os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
     with open(CONFIG, "w") as f:
-        json.dump(rows, f, indent=2)
+        json.dump(cfg, f, indent=2)
 
 
-def press(vk):
-    user32.keybd_event(vk, 0, 0, 0)
-    user32.keybd_event(vk, 0, KEYUP, 0)
+def press(*vks):
+    for vk in vks:
+        user32.keybd_event(vk, 0, 0, 0)
+    for vk in reversed(vks):
+        user32.keybd_event(vk, 0, KEYUP, 0)
+
+
+def click(down, up, times=1):
+    for _ in range(times):
+        user32.mouse_event(down, 0, 0, 0, 0)
+        user32.mouse_event(up, 0, 0, 0, 0)
 
 
 def mic_volume():
@@ -68,28 +103,58 @@ def mic_volume():
 def do_action(action):
     if action in VK:
         press(VK[action])
-        return
-    vol = mic_volume()
-    if action == "Mute / unmute mic":
-        vol.SetMute(not vol.GetMute(), None)
-    else:
-        step = 0.05 if action == "Mic volume up" else -0.05
-        level = min(1.0, max(0.0, vol.GetMasterVolumeLevelScalar() + step))
-        vol.SetMasterVolumeLevelScalar(level, None)
+    elif action in COMBO:
+        press(*COMBO[action])
+    elif action == "Middle click":
+        click(0x20, 0x40)
+    elif action == "Double click":
+        click(0x02, 0x04, 2)
+    elif action in MIC:
+        vol = mic_volume()
+        if action == "Mute / unmute mic":
+            vol.SetMute(not vol.GetMute(), None)
+        else:
+            step = 0.05 if action == "Mic volume up" else -0.05
+            level = min(1.0, max(0.0, vol.GetMasterVolumeLevelScalar() + step))
+            vol.SetMasterVolumeLevelScalar(level, None)
 
 
-class HotkeyThread(threading.Thread):
-    """Owns the global hotkeys. Windows delivers WM_HOTKEY to the thread that registered them."""
+class MSLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [("pt", wintypes.POINT), ("mouseData", wintypes.DWORD), ("flags", wintypes.DWORD),
+                ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+
+class InputThread(threading.Thread):
+    """Owns the global hotkeys and the mouse hook (both need a message loop on one thread)."""
 
     def __init__(self):
         super().__init__(daemon=True)
-        self.rows = []
+        self.cfg = load()
         self.result = ""
         self.ready = threading.Event()
         self.tid = None
+        self.pending = []
+        self.mouse_map = {}  # "middle" / 1 / 2 -> action
+        self._proc = HOOKPROC(self._mouse_proc)  # keep a reference so it isn't garbage collected
+
+    def _mouse_proc(self, code, wparam, lparam):
+        if code >= 0 and wparam in (WM_MBUTTONDOWN, WM_MBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP):
+            info = ctypes.cast(lparam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
+            if not info.flags & LLMHF_INJECTED:  # ignore clicks we send ourselves
+                if wparam in (WM_MBUTTONDOWN, WM_MBUTTONUP):
+                    button = "middle"
+                else:
+                    button = (info.mouseData >> 16) & 0xFFFF
+                action = self.mouse_map.get(button)
+                if action:
+                    if wparam in (WM_MBUTTONDOWN, WM_XBUTTONDOWN) and action != DISABLE:
+                        self.pending.append(action)
+                        user32.PostThreadMessageW(self.tid, WM_RUN, 0, 0)
+                    return 1  # swallow the original button press and release
+        return user32.CallNextHookEx(None, code, wparam, lparam)
 
     def run(self):
-        self.tid = ctypes.windll.kernel32.GetCurrentThreadId()
+        self.tid = kernel32.GetCurrentThreadId()
         try:
             import comtypes
             comtypes.CoInitialize()
@@ -97,6 +162,7 @@ class HotkeyThread(threading.Thread):
             pass
         msg = wintypes.MSG()
         user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 0)  # create the message queue
+        hook = user32.SetWindowsHookExW(WH_MOUSE_LL, self._proc, kernel32.GetModuleHandleW(None), 0)
         self.ready.set()
         active = {}
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
@@ -104,23 +170,30 @@ class HotkeyThread(threading.Thread):
                 for hid in active:
                     user32.UnregisterHotKey(None, hid)
                 active, failed = {}, []
-                for i, row in enumerate(self.rows):
-                    if row["action"] == ACTIONS[0]:
+                for i, row in enumerate(self.cfg["keys"]):
+                    if row["action"] == NONE:
                         continue
                     if user32.RegisterHotKey(None, i + 1, 0, KEYS[row["key"]]):
                         active[i + 1] = row["action"]
                     else:
                         failed.append(row["key"])
+                self.mouse_map = {MOUSE[n]: a for n, a in self.cfg["mouse"].items() if a != NONE}
                 self.result = ("In use by another program: " + ", ".join(failed)) if failed else "Applied."
-            elif msg.message == WM_HOTKEY:
+                if not hook and self.mouse_map:
+                    self.result = "Could not hook the mouse."
+            elif msg.message in (WM_HOTKEY, WM_RUN):
+                action = active.get(msg.wParam) if msg.message == WM_HOTKEY else (self.pending.pop(0) if self.pending else None)
                 try:
-                    do_action(active[msg.wParam])
+                    if action:
+                        do_action(action)
                 except Exception as e:  # noqa: BLE001
                     self.result = f"Action failed: {e}"
+        if hook:
+            user32.UnhookWindowsHookEx(hook)
 
-    def set_rows(self, rows):
+    def set_cfg(self, cfg):
         self.ready.wait()
-        self.rows = rows
+        self.cfg = cfg
         user32.PostThreadMessageW(self.tid, WM_APP, 0, 0)
 
 
@@ -158,53 +231,67 @@ class App(tk.Tk):
             self.iconphoto(True, self._icon)
         except tk.TclError:
             pass
-        self.hk = HotkeyThread()
+        self.hk = InputThread()
         self.hk.start()
+        cfg = load()
         frm = ttk.Frame(self, padding=14)
         frm.grid()
-        ttk.Label(frm, text="Key").grid(row=0, column=0, sticky="w")
-        ttk.Label(frm, text="Action").grid(row=0, column=1, sticky="w", padx=12)
-        self.rows = []
-        for i, row in enumerate(load()):
-            key = ttk.Combobox(frm, values=list(KEYS), state="readonly", width=6)
+        ttk.Label(frm, text="Keyboard", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        self.key_rows = []
+        for i, row in enumerate(cfg["keys"]):
+            key = ttk.Combobox(frm, values=list(KEYS), state="readonly", width=16)
             key.set(row["key"] if row["key"] in KEYS else "F5")
             act = ttk.Combobox(frm, values=ACTIONS, state="readonly", width=26)
-            act.set(row["action"] if row["action"] in ACTIONS else ACTIONS[0])
-            key.grid(row=i + 1, column=0, pady=5)
-            act.grid(row=i + 1, column=1, pady=5, padx=12)
-            self.rows.append((key, act))
+            act.set(row["action"] if row["action"] in ACTIONS else NONE)
+            key.grid(row=i + 1, column=0, pady=4, sticky="w")
+            act.grid(row=i + 1, column=1, pady=4, padx=12)
+            self.key_rows.append((key, act))
+        ttk.Label(frm, text="Mouse buttons", font=("Segoe UI", 9, "bold")).grid(row=6, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        self.mouse_rows = {}
+        for i, name in enumerate(MOUSE):
+            ttk.Label(frm, text=name).grid(row=7 + i, column=0, sticky="w")
+            act = ttk.Combobox(frm, values=ACTIONS, state="readonly", width=26)
+            act.set(cfg["mouse"][name] if cfg["mouse"][name] in ACTIONS else NONE)
+            act.grid(row=7 + i, column=1, pady=4, padx=12)
+            self.mouse_rows[name] = act
+        self.auto = tk.BooleanVar(value=autostart_enabled())
+        ttk.Checkbutton(frm, text="Start with Windows", variable=self.auto,
+                        command=lambda: set_autostart(self.auto.get())).grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
         bar = ttk.Frame(frm)
-        bar.grid(row=5, column=0, columnspan=2, pady=(10, 0), sticky="w")
+        bar.grid(row=11, column=0, columnspan=2, pady=(10, 0), sticky="w")
         ttk.Button(bar, text="Apply", command=self.apply).pack(side="left")
         ttk.Button(bar, text="Reset to defaults", command=self.reset).pack(side="left", padx=8)
         ttk.Button(bar, text="Quit", command=self.quit_app).pack(side="left")
-        self.auto = tk.BooleanVar(value=autostart_enabled())
-        ttk.Checkbutton(frm, text="Start with Windows", variable=self.auto,
-                        command=lambda: set_autostart(self.auto.get())).grid(row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
         self.status = tk.StringVar()
-        ttk.Label(frm, textvariable=self.status).grid(row=7, column=0, columnspan=2, sticky="w", pady=(6, 0))
-        self.protocol("WM_DELETE_WINDOW", self.iconify)  # keep running so hotkeys keep working
+        ttk.Label(frm, textvariable=self.status).grid(row=12, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.protocol("WM_DELETE_WINDOW", self.iconify)  # keep running so the remaps keep working
         self.apply()
         if "--minimized" in sys.argv:
             self.iconify()
 
     def current(self):
-        return [{"key": k.get(), "action": a.get()} for k, a in self.rows]
+        return {
+            "keys": [{"key": k.get(), "action": a.get()} for k, a in self.key_rows],
+            "mouse": {n: a.get() for n, a in self.mouse_rows.items()},
+            "autostart": self.auto.get(),
+        }
 
     def apply(self):
-        rows = self.current()
-        keys = [r["key"] for r in rows if r["action"] != ACTIONS[0]]
+        cfg = self.current()
+        keys = [r["key"] for r in cfg["keys"] if r["action"] != NONE]
         if len(keys) != len(set(keys)):
             self.status.set("Each key can only be used once.")
             return
-        save(rows)
-        self.hk.set_rows(rows)
+        save(cfg)
+        self.hk.set_cfg(cfg)
         self.after(300, lambda: self.status.set(self.hk.result))
 
     def reset(self):
-        for (k, a), d in zip(self.rows, DEFAULTS):
+        for (k, a), d in zip(self.key_rows, DEFAULTS["keys"]):
             k.set(d["key"])
             a.set(d["action"])
+        for a in self.mouse_rows.values():
+            a.set(NONE)
 
     def quit_app(self):
         if self.hk.tid:

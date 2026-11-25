@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""Fingertip Control: map keyboard keys (default F5-F8) to media/volume actions on Cinnamon."""
+"""Fingertip Control: remap F-keys and mouse buttons to simple actions on Linux Mint (Cinnamon, X11)."""
 import ast
 import json
 import os
 import subprocess
+import sys
 
-import gi
-gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk  # noqa: E402
-
-CONFIG = os.path.expanduser("~/.config/key-shortcuts/config.json")
+CONFIG_DIR = os.path.expanduser("~/.config/key-shortcuts")
+CONFIG = os.path.join(CONFIG_DIR, "config.json")
+XBINDKEYS_RC = os.path.join(CONFIG_DIR, "xbindkeysrc")
+AUTOSTART = os.path.expanduser("~/.config/autostart/fingertip-control.desktop")
 KB_ROOT = "org.cinnamon.desktop.keybindings"
 KB_PATH = "/org/cinnamon/desktop/keybindings/custom-keybindings/"
 PREFIX = "keyshortcut"
 
+NONE = "None (leave as is)"
 ACTIONS = {
-    "None (disabled)": None,
+    NONE: None,
     "Play / Pause": "playerctl play-pause",
     "Next track": "playerctl next",
     "Previous track": "playerctl previous",
@@ -26,38 +27,57 @@ ACTIONS = {
     "Mute / unmute mic": "pactl set-source-mute @DEFAULT_SOURCE@ toggle",
     "Mic volume up": "pactl set-source-volume @DEFAULT_SOURCE@ +5%",
     "Mic volume down": "pactl set-source-volume @DEFAULT_SOURCE@ -5%",
+    "Copy": "xdotool key ctrl+c",
+    "Paste": "xdotool key ctrl+v",
+    "Undo": "xdotool key ctrl+z",
+    "Browser back": "xdotool key alt+Left",
+    "Browser forward": "xdotool key alt+Right",
+    "Middle click": "xdotool click 2",
+    "Double click": "xdotool click --repeat 2 --delay 60 1",
+    "Disable this button": "true",
 }
 KEYS = [f"F{i}" for i in range(1, 13)]
-DEFAULTS = [
-    {"key": "F5", "action": "Play / Pause"},
-    {"key": "F6", "action": "Mute / unmute mic"},
-    {"key": "F7", "action": "Volume down"},
-    {"key": "F8", "action": "Volume up"},
-]
+MOUSE = {"Middle button": 2, "Back button": 8, "Forward button": 9}  # X11 button numbers
+DEFAULTS = {
+    "keys": [
+        {"key": "F5", "action": "Play / Pause"},
+        {"key": "F6", "action": "Mute / unmute mic"},
+        {"key": "F7", "action": "Volume down"},
+        {"key": "F8", "action": "Volume up"},
+    ],
+    "mouse": {name: NONE for name in MOUSE},
+    "autostart": False,
+}
 
 
 def load():
+    cfg = json.loads(json.dumps(DEFAULTS))
     try:
         with open(CONFIG) as f:
             data = json.load(f)
-        if len(data) == 4:
-            return data
+        if isinstance(data, list) and len(data) == 4:  # config from the first version
+            cfg["keys"] = data
+        elif isinstance(data, dict):
+            if len(data.get("keys", [])) == 4:
+                cfg["keys"] = data["keys"]
+            cfg["mouse"].update({k: v for k, v in data.get("mouse", {}).items() if k in MOUSE})
+            cfg["autostart"] = bool(data.get("autostart", False))
     except (OSError, ValueError):
         pass
-    return [dict(d) for d in DEFAULTS]
+    return cfg
 
 
-def save(rows):
-    os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+def save(cfg):
+    os.makedirs(CONFIG_DIR, exist_ok=True)
     with open(CONFIG, "w") as f:
-        json.dump(rows, f, indent=2)
+        json.dump(cfg, f, indent=2)
 
 
 def gset(schema, key, value):
     subprocess.run(["gsettings", "set", schema, key, value], check=True)
 
 
-def apply(rows):
+def apply_keys(rows):
     """Write Cinnamon custom keybindings, leaving other custom shortcuts alone."""
     current = subprocess.run(
         ["gsettings", "get", KB_ROOT, "custom-list"],
@@ -71,76 +91,147 @@ def apply(rows):
             continue
         name = f"{PREFIX}{i + 1}"
         schema = f"{KB_ROOT}.custom-keybinding:{KB_PATH}{name}/"
-        gset(schema, "name", f"Key Shortcuts: {row['action']}")
+        gset(schema, "name", f"Fingertip Control: {row['action']}")
         gset(schema, "command", cmd)
         gset(schema, "binding", str([row["key"]]))
         names.append(name)
     gset(KB_ROOT, "custom-list", str(existing + names))
 
 
-class Window(Gtk.Window):
-    def __init__(self):
-        super().__init__(title="Fingertip Control")
-        icon = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets", "logo.png")
-        if os.path.exists(icon):
-            self.set_icon_from_file(icon)
-        self.set_border_width(14)
-        self.set_resizable(False)
-        grid = Gtk.Grid(column_spacing=12, row_spacing=10)
-        self.add(grid)
-        grid.attach(Gtk.Label(label="Key", xalign=0), 0, 0, 1, 1)
-        grid.attach(Gtk.Label(label="Action", xalign=0), 1, 0, 1, 1)
+def apply_mouse(mouse):
+    """Mouse buttons are handled by xbindkeys (X11), using a config file of our own."""
+    subprocess.run(["pkill", "-f", f"xbindkeys -f {XBINDKEYS_RC}"], check=False)
+    lines = []
+    for name, button in MOUSE.items():
+        cmd = ACTIONS.get(mouse.get(name, NONE))
+        if cmd:
+            lines.append(f'"{cmd}"\n  b:{button}\n')
+    if not lines:
+        return
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    with open(XBINDKEYS_RC, "w") as f:
+        f.write("\n".join(lines))
+    subprocess.Popen(["xbindkeys", "-f", XBINDKEYS_RC], start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        self.rows = []
-        for i, row in enumerate(load()):
-            key_box = Gtk.ComboBoxText()
-            for k in KEYS:
-                key_box.append_text(k)
-            key_box.set_active(KEYS.index(row["key"]) if row["key"] in KEYS else 0)
-            act_box = Gtk.ComboBoxText()
-            for a in ACTIONS:
-                act_box.append_text(a)
+
+def set_autostart(on):
+    if on:
+        os.makedirs(os.path.dirname(AUTOSTART), exist_ok=True)
+        with open(AUTOSTART, "w") as f:
+            f.write("[Desktop Entry]\nType=Application\nName=Fingertip Control\n"
+                    f"Exec={os.path.realpath(__file__)} --apply\nIcon=fingertip-control\n"
+                    "X-GNOME-Autostart-enabled=true\n")
+    elif os.path.exists(AUTOSTART):
+        os.remove(AUTOSTART)
+
+
+def apply_all(cfg):
+    apply_keys(cfg["keys"])
+    apply_mouse(cfg["mouse"])
+    set_autostart(cfg["autostart"])
+    save(cfg)
+
+
+def run_gui():
+    import gi
+    gi.require_version("Gtk", "3.0")
+    from gi.repository import Gtk
+
+    class Window(Gtk.Window):
+        def __init__(self):
+            super().__init__(title="Fingertip Control")
+            icon = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets", "logo.png")
+            if os.path.exists(icon):
+                self.set_icon_from_file(icon)
+            self.set_border_width(14)
+            self.set_resizable(False)
+            cfg = load()
             names = list(ACTIONS)
-            act_box.set_active(names.index(row["action"]) if row["action"] in names else 0)
-            grid.attach(key_box, 0, i + 1, 1, 1)
-            grid.attach(act_box, 1, i + 1, 1, 1)
-            self.rows.append((key_box, act_box))
+            grid = Gtk.Grid(column_spacing=12, row_spacing=8)
+            self.add(grid)
 
-        self.status = Gtk.Label(label="", xalign=0)
-        btn = Gtk.Button(label="Apply")
-        btn.connect("clicked", self.on_apply)
-        reset = Gtk.Button(label="Reset to defaults")
-        reset.connect("clicked", self.on_reset)
-        bar = Gtk.Box(spacing=8)
-        bar.pack_start(btn, False, False, 0)
-        bar.pack_start(reset, False, False, 0)
-        grid.attach(bar, 0, 5, 2, 1)
-        grid.attach(self.status, 0, 6, 2, 1)
+            def header(text, row):
+                lbl = Gtk.Label(xalign=0)
+                lbl.set_markup(f"<b>{text}</b>")
+                grid.attach(lbl, 0, row, 2, 1)
 
-    def current(self):
-        return [{"key": k.get_active_text(), "action": a.get_active_text()} for k, a in self.rows]
+            def action_box(current):
+                box = Gtk.ComboBoxText()
+                for a in names:
+                    box.append_text(a)
+                box.set_active(names.index(current) if current in names else 0)
+                return box
 
-    def on_apply(self, _):
-        rows = self.current()
-        keys = [r["key"] for r in rows if ACTIONS.get(r["action"])]
-        if len(keys) != len(set(keys)):
-            self.status.set_text("Each key can only be used once.")
-            return
-        try:
-            apply(rows)
-            save(rows)
-            self.status.set_text("Applied.")
-        except Exception as e:  # noqa: BLE001
-            self.status.set_text(f"Failed: {e}")
+            header("Keyboard", 0)
+            self.key_rows = []
+            for i, row in enumerate(cfg["keys"]):
+                key_box = Gtk.ComboBoxText()
+                for k in KEYS:
+                    key_box.append_text(k)
+                key_box.set_active(KEYS.index(row["key"]) if row["key"] in KEYS else 0)
+                act_box = action_box(row["action"])
+                grid.attach(key_box, 0, i + 1, 1, 1)
+                grid.attach(act_box, 1, i + 1, 1, 1)
+                self.key_rows.append((key_box, act_box))
 
-    def on_reset(self, _):
-        for (k, a), d in zip(self.rows, DEFAULTS):
-            k.set_active(KEYS.index(d["key"]))
-            a.set_active(list(ACTIONS).index(d["action"]))
+            header("Mouse buttons", 6)
+            self.mouse_rows = {}
+            for i, name in enumerate(MOUSE):
+                grid.attach(Gtk.Label(label=name, xalign=0), 0, 7 + i, 1, 1)
+                box = action_box(cfg["mouse"][name])
+                grid.attach(box, 1, 7 + i, 1, 1)
+                self.mouse_rows[name] = box
 
+            self.auto = Gtk.CheckButton(label="Start mouse remapping at login")
+            self.auto.set_active(cfg["autostart"])
+            grid.attach(self.auto, 0, 10, 2, 1)
 
-if __name__ == "__main__":
+            bar = Gtk.Box(spacing=8)
+            for label, handler in (("Apply", self.on_apply), ("Reset to defaults", self.on_reset)):
+                b = Gtk.Button(label=label)
+                b.connect("clicked", handler)
+                bar.pack_start(b, False, False, 0)
+            grid.attach(bar, 0, 11, 2, 1)
+            self.status = Gtk.Label(label="", xalign=0)
+            grid.attach(self.status, 0, 12, 2, 1)
+
+        def current(self):
+            return {
+                "keys": [{"key": k.get_active_text(), "action": a.get_active_text()} for k, a in self.key_rows],
+                "mouse": {n: b.get_active_text() for n, b in self.mouse_rows.items()},
+                "autostart": self.auto.get_active(),
+            }
+
+        def on_apply(self, _):
+            cfg = self.current()
+            keys = [r["key"] for r in cfg["keys"] if ACTIONS.get(r["action"])]
+            if len(keys) != len(set(keys)):
+                self.status.set_text("Each key can only be used once.")
+                return
+            try:
+                apply_all(cfg)
+                self.status.set_text("Applied.")
+            except Exception as e:  # noqa: BLE001
+                self.status.set_text(f"Failed: {e}")
+
+        def on_reset(self, _):
+            names = list(ACTIONS)
+            for (k, a), d in zip(self.key_rows, DEFAULTS["keys"]):
+                k.set_active(KEYS.index(d["key"]))
+                a.set_active(names.index(d["action"]))
+            for box in self.mouse_rows.values():
+                box.set_active(0)
+            self.auto.set_active(False)
+
     win = Window()
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
     Gtk.main()
+
+
+if __name__ == "__main__":
+    if "--apply" in sys.argv:  # used at login: start mouse remapping without opening the window
+        apply_mouse(load()["mouse"])
+    else:
+        run_gui()
