@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Fingertip Control: map keyboard keys (default F5-F8) to media/volume actions on Cinnamon."""
+import ast
+import json
+import os
+import subprocess
+
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk  # noqa: E402
+
+CONFIG = os.path.expanduser("~/.config/key-shortcuts/config.json")
+KB_ROOT = "org.cinnamon.desktop.keybindings"
+KB_PATH = "/org/cinnamon/desktop/keybindings/custom-keybindings/"
+PREFIX = "keyshortcut"
+
+ACTIONS = {
+    "None (disabled)": None,
+    "Play / Pause": "playerctl play-pause",
+    "Next track": "playerctl next",
+    "Previous track": "playerctl previous",
+    "Stop": "playerctl stop",
+    "Mute / unmute speakers": "pactl set-sink-mute @DEFAULT_SINK@ toggle",
+    "Volume up": "pactl set-sink-volume @DEFAULT_SINK@ +5%",
+    "Volume down": "pactl set-sink-volume @DEFAULT_SINK@ -5%",
+    "Mute / unmute mic": "pactl set-source-mute @DEFAULT_SOURCE@ toggle",
+    "Mic volume up": "pactl set-source-volume @DEFAULT_SOURCE@ +5%",
+    "Mic volume down": "pactl set-source-volume @DEFAULT_SOURCE@ -5%",
+}
+KEYS = [f"F{i}" for i in range(1, 13)]
+DEFAULTS = [
+    {"key": "F5", "action": "Play / Pause"},
+    {"key": "F6", "action": "Mute / unmute mic"},
+    {"key": "F7", "action": "Volume down"},
+    {"key": "F8", "action": "Volume up"},
+]
+
+
+def load():
+    try:
+        with open(CONFIG) as f:
+            data = json.load(f)
+        if len(data) == 4:
+            return data
+    except (OSError, ValueError):
+        pass
+    return [dict(d) for d in DEFAULTS]
+
+
+def save(rows):
+    os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+    with open(CONFIG, "w") as f:
+        json.dump(rows, f, indent=2)
+
+
+def gset(schema, key, value):
+    subprocess.run(["gsettings", "set", schema, key, value], check=True)
+
+
+def apply(rows):
+    """Write Cinnamon custom keybindings, leaving other custom shortcuts alone."""
+    current = subprocess.run(
+        ["gsettings", "get", KB_ROOT, "custom-list"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    existing = [s for s in ast.literal_eval(current.replace("@as ", "")) if not s.startswith(PREFIX)]
+    names = []
+    for i, row in enumerate(rows):
+        cmd = ACTIONS.get(row["action"])
+        if not cmd:
+            continue
+        name = f"{PREFIX}{i + 1}"
+        schema = f"{KB_ROOT}.custom-keybinding:{KB_PATH}{name}/"
+        gset(schema, "name", f"Key Shortcuts: {row['action']}")
+        gset(schema, "command", cmd)
+        gset(schema, "binding", str([row["key"]]))
+        names.append(name)
+    gset(KB_ROOT, "custom-list", str(existing + names))
+
+
+class Window(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="Fingertip Control")
+        self.set_border_width(14)
+        self.set_resizable(False)
+        grid = Gtk.Grid(column_spacing=12, row_spacing=10)
+        self.add(grid)
+        grid.attach(Gtk.Label(label="Key", xalign=0), 0, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Action", xalign=0), 1, 0, 1, 1)
+
+        self.rows = []
+        for i, row in enumerate(load()):
+            key_box = Gtk.ComboBoxText()
+            for k in KEYS:
+                key_box.append_text(k)
+            key_box.set_active(KEYS.index(row["key"]) if row["key"] in KEYS else 0)
+            act_box = Gtk.ComboBoxText()
+            for a in ACTIONS:
+                act_box.append_text(a)
+            names = list(ACTIONS)
+            act_box.set_active(names.index(row["action"]) if row["action"] in names else 0)
+            grid.attach(key_box, 0, i + 1, 1, 1)
+            grid.attach(act_box, 1, i + 1, 1, 1)
+            self.rows.append((key_box, act_box))
+
+        self.status = Gtk.Label(label="", xalign=0)
+        btn = Gtk.Button(label="Apply")
+        btn.connect("clicked", self.on_apply)
+        reset = Gtk.Button(label="Reset to defaults")
+        reset.connect("clicked", self.on_reset)
+        bar = Gtk.Box(spacing=8)
+        bar.pack_start(btn, False, False, 0)
+        bar.pack_start(reset, False, False, 0)
+        grid.attach(bar, 0, 5, 2, 1)
+        grid.attach(self.status, 0, 6, 2, 1)
+
+    def current(self):
+        return [{"key": k.get_active_text(), "action": a.get_active_text()} for k, a in self.rows]
+
+    def on_apply(self, _):
+        rows = self.current()
+        keys = [r["key"] for r in rows if ACTIONS.get(r["action"])]
+        if len(keys) != len(set(keys)):
+            self.status.set_text("Each key can only be used once.")
+            return
+        try:
+            apply(rows)
+            save(rows)
+            self.status.set_text("Applied.")
+        except Exception as e:  # noqa: BLE001
+            self.status.set_text(f"Failed: {e}")
+
+    def on_reset(self, _):
+        for (k, a), d in zip(self.rows, DEFAULTS):
+            k.set_active(KEYS.index(d["key"]))
+            a.set_active(list(ACTIONS).index(d["action"]))
+
+
+if __name__ == "__main__":
+    win = Window()
+    win.connect("destroy", Gtk.main_quit)
+    win.show_all()
+    Gtk.main()
