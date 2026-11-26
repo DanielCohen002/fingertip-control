@@ -15,7 +15,7 @@ AUTOSTART = os.path.expanduser("~/.config/autostart/fingertip-control.desktop")
 KB_ROOT = "org.cinnamon.desktop.keybindings"
 KB_PATH = "/org/cinnamon/desktop/keybindings/custom-keybindings/"
 PREFIX = "keyshortcut"
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 
 NONE = "None (leave as is)"
 CUSTOM = "Custom key combo"
@@ -213,6 +213,9 @@ def update():
     r = subprocess.run(["git", "-C", here, "pull", "--ff-only"], capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
         return False, "Update failed: " + (r.stderr.strip().splitlines() or ["unknown error"])[-1]
+    m = re.search(r'^VERSION = "([^"]+)"', open(os.path.realpath(__file__)).read(), re.M)
+    if m and m.group(1) != VERSION:  # files on disk are newer than the running app (e.g. pulled earlier)
+        return True, "Updated. Restarting..."
     return "Already up to date" not in r.stdout, "Already up to date." if "Already up to date" in r.stdout else "Updated. Restarting..."
 
 
