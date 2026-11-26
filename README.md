@@ -5,7 +5,7 @@
 A small app for Linux Mint (Cinnamon) and Windows that remaps F-keys and mouse buttons to simple actions. No profiles or macros, just pick an action from a dropdown.
 
 - Defaults: F5 Play/Pause, F6 Mute mic, F7 Volume down, F8 Volume up
-- Each of the four keys can be changed to any of F1-F12 and any action from a dropdown
+- Each of the four keys can be changed to any of F1-F12, PageUp, PageDown, LeftAlt or RightAlt, and any action from a dropdown
 - Mouse buttons (middle, back, forward) can be remapped the same way, or disabled
 - Closing the window hides it to the system tray and the remaps keep running. Click the tray icon to reopen it, right-click for Quit. Launching the app again just brings the window back
 - **Update** button: on Windows it downloads the newest release and restarts itself; on Linux it pulls the latest version from GitHub (git clone installs)

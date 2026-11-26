@@ -79,6 +79,7 @@ def parse_combo(text):
     return sorted(codes, key=lambda c: c not in MODS.values())
 
 KEYS = {f"F{i}": 0x6F + i for i in range(1, 13)}
+KEYS.update({"PageUp": 0x21, "PageDown": 0x22, "LeftAlt": 0xA4, "RightAlt": 0xA5})
 MOUSE = {"Middle button": "middle", "Back button": 1, "Forward button": 2}  # X1 = back, X2 = forward
 DEFAULTS = {
     "keys": [

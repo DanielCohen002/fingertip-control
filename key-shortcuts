@@ -49,7 +49,8 @@ NAMED = {"enter": "Return", "return": "Return", "esc": "Escape", "escape": "Esca
 HELP = ("Custom key combo: type keys joined with +, like ctrl+shift+t or alt+left.\n"
         "Modifiers: ctrl, alt, shift, win.  Keys: a-z, 0-9, f1-f12, enter, esc, tab, space, delete,\n"
         "backspace, home, end, pageup, pagedown, left, right, up, down.")
-KEYS = [f"F{i}" for i in range(1, 13)]
+KEYS = [f"F{i}" for i in range(1, 13)] + ["PageUp", "PageDown", "LeftAlt", "RightAlt"]
+KEYSYM = {"PageUp": "Prior", "PageDown": "Next", "LeftAlt": "Alt_L", "RightAlt": "Alt_R"}  # others: the name itself
 MOUSE = {"Middle button": 2, "Back button": 8, "Forward button": 9}  # X11 button numbers
 DEFAULTS = {
     "keys": [
@@ -145,7 +146,7 @@ def apply_keys(rows):
         schema = f"{KB_ROOT}.custom-keybinding:{KB_PATH}{name}/"
         gset(schema, "name", f"Fingertip Control: {key}")
         gset(schema, "command", f"{me} --run {key}")
-        gset(schema, "binding", str([key]))
+        gset(schema, "binding", str([KEYSYM.get(key, key)]))
     gset(KB_ROOT, "custom-list", str(others + list(wanted)))
     return any(i not in wanted for i in old_ours)
 
