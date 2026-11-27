@@ -1,8 +1,16 @@
-# Fingertip Control
+<p align="center">
+  <img src="assets/logo.png" alt="Fingertip Control logo" width="128" height="128">
+</p>
 
-<p align="center"><img src="assets/logo.png" width="128" alt="Fingertip Control logo"></p>
+<h1 align="center">Fingertip Control</h1>
 
 A small app for Linux Mint (Cinnamon) and Windows that remaps F-keys and mouse buttons to simple actions. No profiles or macros, just pick an action from a dropdown.
+
+### [Download the latest FingertipControl.exe (Windows)](https://github.com/DanielCohen002/fingertip-control/releases/latest)
+
+On Linux Mint (Cinnamon), run it from source (see Requirements and Run below).
+
+What it does:
 
 - Defaults: F5 Play/Pause, F6 Mute mic, F7 Volume down, F8 Volume up
 - Each of the four keys can be changed to any of F1-F12, PageUp, PageDown, LeftAlt or RightAlt, and any action from a dropdown
